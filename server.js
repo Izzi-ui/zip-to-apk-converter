@@ -5,16 +5,17 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const os = require('os');
-const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MAX_UPLOAD = 200 * 1024 * 1024;
 const MAX_EXTRACTED = 1024 * 1024 * 1024;
-const upload = multer({ limits: { fileSize: MAX_UPLOAD, files: 1 }, fileFilter: (_, file, cb) => {
-  cb(null, path.extname(file.originalname).toLowerCase() === '.zip');
-} });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_UPLOAD, files: 1 },
+  fileFilter: (_, file, cb) => cb(null, path.extname(file.originalname).toLowerCase() === '.zip')
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 function safeArchivePath(name) {
@@ -70,7 +71,7 @@ async function locateApk(root) {
   const found = [];
   async function walk(dir) {
     for (const item of await fsp.readdir(dir, { withFileTypes: true })) {
-      if (item.name === '.gradle' || item.name === 'build' && dir === root) continue;
+      if (item.name === '.gradle' || (item.name === 'build' && dir === root)) continue;
       const full = path.join(dir, item.name);
       if (item.isDirectory()) await walk(full); else if (item.name.endsWith('.apk')) found.push(full);
     }
@@ -86,7 +87,9 @@ app.post('/api/convert', upload.single('project'), async (req, res) => {
   const work = await fsp.mkdtemp(path.join(os.tmpdir(), 'zip-apk-'));
   try {
     const zipPath = path.join(work, 'project.zip');
-    await fsp.rename(req.file.path, zipPath);
+    // Multer uses memoryStorage, so req.file.path is not available. Persist the
+    // uploaded buffer inside the per-request temporary directory instead.
+    await fsp.writeFile(zipPath, req.file.buffer);
     const source = path.join(work, 'source');
     await fsp.mkdir(source);
     await extractZip(zipPath, source);
@@ -99,10 +102,10 @@ app.post('/api/convert', upload.single('project'), async (req, res) => {
     res.download(apk, path.basename(apk), err => { if (err && !res.headersSent) res.status(500).json({ error: err.message }); });
   } catch (error) {
     console.error(error);
-    res.status(422).json({ error: error.message || 'Conversion failed.' });
+    if (!res.headersSent) res.status(422).json({ error: error.message || 'Conversion failed.' });
   } finally {
     setTimeout(() => fsp.rm(work, { recursive: true, force: true }).catch(() => {}), 30_000);
   }
 });
 app.use((err, _req, res, _next) => res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: err.message || 'Invalid upload.' }));
-app.listen(PORT, () => console.log(`ZIP-to-APK converter listening on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`ZIP-to-APK converter listening on port ${PORT}`));

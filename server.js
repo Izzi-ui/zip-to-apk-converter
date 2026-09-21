@@ -49,21 +49,29 @@ async function extractZip(zipPath, destination) {
 
 async function findProjectRoot(base) {
   const queue = [{ dir: base, depth: 0 }];
+  let fallback = null;
   while (queue.length) {
     const { dir, depth } = queue.shift();
     const names = await fsp.readdir(dir, { withFileTypes: true });
-    if (names.some(item => ['settings.gradle', 'settings.gradle.kts', 'build.gradle', 'build.gradle.kts'].includes(item.name))) return dir;
-    if (depth < 3) for (const item of names) {
-      if (!item.isDirectory() || item.name === 'node_modules' || item.name === '.git' || item.name.startsWith('.')) continue;
-      queue.push({ dir: path.join(dir, item.name), depth: depth + 1 });
+    const hasGradleRoot = names.some(item => ['settings.gradle', 'settings.gradle.kts', 'gradlew', 'gradlew.bat'].includes(item.name));
+    if (hasGradleRoot) return dir;
+    const hasBuildFile = names.some(item => ['build.gradle', 'build.gradle.kts'].includes(item.name));
+    if (hasBuildFile && !fallback) fallback = dir;
+    if (depth < 4) {
+      for (const item of names) {
+        if (!item.isDirectory() || item.name === 'node_modules' || item.name === '.git' || item.name.startsWith('.')) continue;
+        queue.push({ dir: path.join(dir, item.name), depth: depth + 1 });
+      }
     }
   }
+  if (fallback) return fallback;
   throw new Error('No Android Gradle project was found. Include settings.gradle or build.gradle in the ZIP.');
 }
 
 function run(command, args, cwd, timeoutMs = 12 * 60 * 1000) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env: { ...process.env, CI: 'true', GRADLE_OPTS: '-Dorg.gradle.daemon=false' }, shell: false });
+    const resolvedCommand = command.startsWith('/') ? command : path.join(cwd, command);
+    const child = spawn(resolvedCommand, args, { cwd, env: { ...process.env, CI: 'true', GRADLE_OPTS: '-Dorg.gradle.daemon=false' }, shell: false });
     let output = '';
     const collect = data => { output += data.toString(); if (output.length > 12000) output = output.slice(-12000); };
     child.stdout.on('data', collect); child.stderr.on('data', collect);
@@ -77,7 +85,7 @@ async function locateApk(root) {
   const found = [];
   async function walk(dir) {
     for (const item of await fsp.readdir(dir, { withFileTypes: true })) {
-      if (item.name === '.gradle' || item.name === '.git') continue;
+      if (item.name === '.gradle' || item.name === '.git' || item.name === 'build' && dir === root) continue;
       const full = path.join(dir, item.name);
       if (item.isDirectory()) await walk(full); else if (item.name.toLowerCase().endsWith('.apk')) found.push(full);
     }

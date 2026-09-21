@@ -17,12 +17,12 @@ const upload = multer({
   fileFilter: (_, file, cb) => cb(null, path.extname(file.originalname).toLowerCase() === '.zip')
 });
 app.use(express.static(path.join(__dirname, 'public')));
+app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
 function safeArchivePath(name) {
   const normalized = path.posix.normalize(String(name).replaceAll('\\', '/'));
   return normalized !== '..' && !normalized.startsWith('../') && !path.posix.isAbsolute(normalized) && !normalized.includes('\0');
 }
-
 async function extractZip(zipPath, destination) {
   let extracted = 0;
   const directory = await unzipper.Open.file(zipPath);
@@ -34,12 +34,9 @@ async function extractZip(zipPath, destination) {
     const target = path.resolve(destination, entry.path);
     if (!target.startsWith(path.resolve(destination) + path.sep)) throw new Error('The ZIP contains an unsafe path.');
     await fsp.mkdir(path.dirname(target), { recursive: true });
-    await new Promise((resolve, reject) => {
-      entry.stream().pipe(fs.createWriteStream(target)).on('finish', resolve).on('error', reject);
-    });
+    await new Promise((resolve, reject) => entry.stream().pipe(fs.createWriteStream(target)).on('finish', resolve).on('error', reject));
   }
 }
-
 async function findProjectRoot(base) {
   const queue = [{ dir: base, depth: 0 }];
   while (queue.length) {
@@ -54,7 +51,6 @@ async function findProjectRoot(base) {
   }
   throw new Error('No Android Gradle project was found. Include settings.gradle or build.gradle in the ZIP.');
 }
-
 function run(command, args, cwd, timeoutMs = 12 * 60 * 1000) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, env: { ...process.env, CI: 'true' }, shell: false });
@@ -62,11 +58,15 @@ function run(command, args, cwd, timeoutMs = 12 * 60 * 1000) {
     child.stdout.on('data', data => { output += data; });
     child.stderr.on('data', data => { output += data; });
     const timer = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('Build timed out after 12 minutes.')); }, timeoutMs);
-    child.on('error', reject);
+    child.on('error', error => {
+      clearTimeout(timer);
+      reject(error.code === 'ENOENT'
+        ? new Error('Gradle is unavailable in the build environment. Redeploy the latest Docker image.')
+        : error);
+    });
     child.on('close', code => { clearTimeout(timer); code === 0 ? resolve(output) : reject(new Error(`Gradle exited with code ${code}.\n${output.slice(-6000)}`)); });
   });
 }
-
 async function locateApk(root) {
   const found = [];
   async function walk(dir) {
@@ -77,25 +77,22 @@ async function locateApk(root) {
     }
   }
   await walk(root);
-  const debug = found.find(file => /debug/i.test(file));
-  if (!debug && !found[0]) throw new Error('The build completed, but no APK was found. Try a project with an Android application module.');
-  return debug || found[0];
+  const apk = found.find(file => /debug/i.test(file)) || found[0];
+  if (!apk) throw new Error('The build completed, but no APK was found. Try an Android application module.');
+  return apk;
 }
-
 app.post('/api/convert', upload.single('project'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Upload one .zip Android project.' });
   const work = await fsp.mkdtemp(path.join(os.tmpdir(), 'zip-apk-'));
   try {
     const zipPath = path.join(work, 'project.zip');
-    // Multer uses memoryStorage, so req.file.path is not available. Persist the
-    // uploaded buffer inside the per-request temporary directory instead.
     await fsp.writeFile(zipPath, req.file.buffer);
     const source = path.join(work, 'source');
     await fsp.mkdir(source);
     await extractZip(zipPath, source);
     const root = await findProjectRoot(source);
     const wrapper = path.join(root, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
-    let command = fs.existsSync(wrapper) ? wrapper : 'gradle';
+    const command = fs.existsSync(wrapper) ? wrapper : 'gradle';
     if (command !== 'gradle') await fsp.chmod(wrapper, 0o755);
     await run(command, ['assembleDebug', '--no-daemon', '--stacktrace'], root);
     const apk = await locateApk(root);

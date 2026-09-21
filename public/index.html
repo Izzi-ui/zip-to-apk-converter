@@ -1,3 +1,47 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZIP → APK Converter</title><link rel="stylesheet" href="style.css"></head>
-<body><main><div class="badge">ANDROID BUILD TOOL</div><h1>ZIP <span>→</span> APK</h1><p class="intro">Upload an Android Studio project and get a downloadable debug APK.</p><form id="form"><label id="drop"><input id="file" name="project" type="file" accept=".zip,application/zip" required><strong>Drop your project ZIP here</strong><small>or click to browse · 200 MB maximum</small></label><button id="button" type="submit">Build APK</button></form><div id="status" role="status"></div><p class="note">Your ZIP must contain a Gradle Android project with <code>settings.gradle</code> or <code>build.gradle</code>.</p></main><script src="app.js"></script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Build a debug APK from an Android project ZIP.">
+  <title>ZipForge — ZIP to APK</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="orb orb-one"></div><div class="orb orb-two"></div>
+  <header class="topbar"><a class="brand" href="/"><span class="brand-mark">↗</span><span>ZipForge</span></a><span class="secure"><i></i> Local build pipeline</span></header>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow"><span></span> ANDROID BUILD TOOL</div>
+      <h1>From project ZIP<br><em>to APK.</em></h1>
+      <p class="lead">Turn your Android Studio project into a ready-to-install debug APK. Drop it in, let Gradle do the work, and download the result.</p>
+    </section>
+    <section class="card">
+      <form id="form">
+        <label id="drop" class="drop-zone" for="file">
+          <input id="file" name="project" type="file" accept=".zip,application/zip" required>
+          <span class="upload-icon">↑</span>
+          <span class="drop-title">Drop your project here</span>
+          <span class="drop-subtitle">or <u>browse files</u> <b>·</b> ZIP up to 200 MB</span>
+          <span id="file-name" class="file-name"></span>
+        </label>
+        <button id="button" type="submit"><span>Build debug APK</span><strong>→</strong></button>
+      </form>
+      <div id="status" role="status" aria-live="polite"></div>
+    </section>
+    <section class="steps" aria-label="How it works">
+      <div class="step"><span>01</span><div><b>Upload</b><small>Zip your Android project</small></div></div>
+      <div class="line"></div>
+      <div class="step"><span>02</span><div><b>Build</b><small>Gradle compiles your app</small></div></div>
+      <div class="line"></div>
+      <div class="step"><span>03</span><div><b>Download</b><small>Get your debug APK</small></div></div>
+    </section>
+    <aside class="tip"><span>✦</span><p><strong>Before you upload</strong> Make sure your ZIP contains <code>settings.gradle</code> or <code>build.gradle</code>, plus an Android application module.</p></aside>
+  </main>
+  <footer><span>ZIPFORGE / 2026</span><span>Built for Android projects</span></footer>
+  <script src="app.js"></script>
+</body>
+</html>
